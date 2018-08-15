@@ -18,12 +18,9 @@
 package sofarpc
 
 import (
-	"context"
 	"reflect"
 	"strconv"
 
-	"github.com/alipay/sofa-mosn/pkg/network/buffer"
-	"github.com/alipay/sofa-mosn/pkg/types"
 )
 
 func SofaPropertyHeader(name string) string {
@@ -90,47 +87,4 @@ func IsSofaRequest(headers map[string]string) bool {
 	}
 
 	return false
-}
-
-func GetMap(context context.Context, defaultSize int) map[string]string {
-	var amap map[string]string
-
-	if context != nil && context.Value(types.ContextKeyConnectionCodecMapPool) != nil {
-		pool := context.Value(types.ContextKeyConnectionCodecMapPool).(types.HeadersBufferPool)
-		amap = pool.Take(defaultSize)
-	}
-
-	if amap == nil {
-		amap = make(map[string]string, defaultSize)
-	}
-
-	return amap
-}
-
-func ReleaseMap(context context.Context, amap map[string]string) {
-	if context != nil && context.Value(types.ContextKeyConnectionCodecMapPool) != nil {
-		pool := context.Value(types.ContextKeyConnectionCodecMapPool).(types.HeadersBufferPool)
-		pool.Give(amap)
-	}
-}
-
-func GetBuffer(context context.Context, size int) types.IoBuffer {
-	var buf types.IoBuffer
-	if context != nil && context.Value(types.ContextKeyConnectionBytesBufferPool) != nil {
-		pool := context.Value(types.ContextKeyConnectionBytesBufferPool).(*buffer.SlabPool)
-		buf = pool.Take(size)
-	}
-
-	if buf == nil {
-		buf = buffer.NewIoBuffer(size)
-	}
-
-	return buf
-}
-
-func ReleaseBuffer(context context.Context, buf types.IoBuffer) {
-	if context != nil && context.Value(types.ContextKeyConnectionBytesBufferPool) != nil {
-		pool := context.Value(types.ContextKeyConnectionBytesBufferPool).(*buffer.SlabPool)
-		pool.Give(buf)
-	}
 }

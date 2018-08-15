@@ -43,6 +43,8 @@ type IoBuffer struct {
 	offMark int
 
 	bootstrap [1 << 6]byte
+
+	pool types.BufferPoolMode
 }
 
 func (b *IoBuffer) Read(p []byte) (n int, err error) {
@@ -75,24 +77,21 @@ func (b *IoBuffer) ReadOnce(r io.Reader) (n int64, err error) {
 	}
 
 	if b.off > 0 && len(b.buf)-b.off < 4*MinRead {
-		newBuf := b.buf
-		copy(newBuf, b.buf[b.off:])
-		b.buf = newBuf[:len(b.buf)-b.off]
-		b.off = 0
+		b.copy(0)
 	}
 
 	for {
-		if free := cap(b.buf) - len(b.buf); free < MinRead {
-			// not enough space at end
-			newBuf := b.buf
-			if b.off+free < MinRead {
-				// not enough space using beginning of buffer;
-				// double buffer capacity
-				newBuf = makeSlice(2*cap(b.buf) + MinRead)
+		if first == false {
+			if free := cap(b.buf) - len(b.buf); free < MinRead {
+				// not enough space at end
+				if b.off+free < MinRead {
+					// not enough space using beginning of buffer;
+					// double buffer capacity
+					b.copy(MinRead)
+				} else {
+					b.copy(0)
+				}
 			}
-			copy(newBuf, b.buf[b.off:])
-			b.buf = newBuf[:len(b.buf)-b.off]
-			b.off = 0
 		}
 
 		l := cap(b.buf) - len(b.buf)
@@ -108,10 +107,6 @@ func (b *IoBuffer) ReadOnce(r io.Reader) (n int64, err error) {
 		conn.SetReadDeadline(time.Time{})
 
 		if e != nil {
-			if te, ok := e.(net.Error); ok && te.Timeout() {
-				return n, nil
-			}
-
 			return n, e
 		}
 
@@ -144,15 +139,13 @@ func (b *IoBuffer) ReadFrom(r io.Reader) (n int64, err error) {
 	for {
 		if free := cap(b.buf) - len(b.buf); free < MinRead {
 			// not enough space at end
-			newBuf := b.buf
 			if b.off+free < MinRead {
 				// not enough space using beginning of buffer;
 				// double buffer capacity
-				newBuf = makeSlice(2*cap(b.buf) + MinRead)
+				b.copy(MinRead)
+			} else {
+				b.copy(0)
 			}
-			copy(newBuf, b.buf[b.off:])
-			b.buf = newBuf[:len(b.buf)-b.off]
-			b.off = 0
 		}
 
 		m, e := r.Read(b.buf[len(b.buf):cap(b.buf)])
@@ -268,15 +261,13 @@ func (b *IoBuffer) Append(data []byte) error {
 
 	if free := cap(b.buf) - len(b.buf); free < dataLen {
 		// not enough space at end
-		newBuf := b.buf
 		if b.off+free < dataLen {
 			// not enough space using beginning of buffer;
 			// double buffer capacity
-			newBuf = makeSlice(2*cap(b.buf) + dataLen)
+			b.copy(dataLen)
+		} else {
+			b.copy(0)
 		}
-		copy(newBuf, b.buf[b.off:])
-		b.buf = newBuf[:len(b.buf)-b.off]
-		b.off = 0
 	}
 
 	m := copy(b.buf[len(b.buf):len(b.buf)+dataLen], data)
@@ -363,11 +354,56 @@ func (b *IoBuffer) available() int {
 }
 
 func (b *IoBuffer) Clone() types.IoBuffer {
-	// todo: use buf pool
-	copied := make([]byte, b.Len())
-	copy(copied, b.Bytes())
+	buf := NewIoBuffer(b.Len())
+	buf.Write(b.Bytes())
 
-	return NewIoBuffer(b.Len())
+	return buf
+}
+
+func (b *IoBuffer) Free() {
+	b.Reset()
+	b.giveSlice(b.buf)
+	b.buf = nil
+}
+
+func (b *IoBuffer) Alloc(size int) {
+	if b.buf != nil {
+		b.Free()
+	}
+	buf := b.makeSlice(size)
+	b.buf = buf[:0]
+}
+
+func (b *IoBuffer) copy(expand int) {
+	var newBuf []byte
+
+	if expand > 0 {
+		newBuf = b.makeSlice(2*cap(b.buf) + expand)
+		copy(newBuf, b.buf[b.off:])
+		b.giveSlice(b.buf)
+	} else {
+		newBuf = b.buf
+		copy(newBuf, b.buf[b.off:])
+	}
+	b.buf = newBuf[:len(b.buf)-b.off]
+	b.off = 0
+}
+
+func (b *IoBuffer) makeSlice(n int) []byte {
+	// TODO: handle large buffer
+	defer func() {
+		if recover() != nil {
+			panic(ErrTooLarge)
+		}
+	}()
+	return b.pool.Take(n).([]byte)
+}
+
+func (b *IoBuffer) giveSlice(buf []byte) {
+	if cap(buf) == 0 {
+		return
+	}
+	b.pool.Give(buf)
 }
 
 func makeSlice(n int) []byte {
@@ -382,12 +418,16 @@ func makeSlice(n int) []byte {
 }
 
 func NewIoBuffer(capacity int) types.IoBuffer {
-	buf := make([]byte, 0, capacity)
-
-	return &IoBuffer{
-		buf:     buf,
+	buffer := &IoBuffer{
+		pool:    BufferGetPool(BufferByteCtx{}),
 		offMark: ResetOffMark,
 	}
+
+	if capacity != 0 {
+		buf := buffer.pool.Take(capacity).([]byte)
+		buffer.buf = buf[:0]
+	}
+	return buffer
 }
 
 func NewIoBufferString(s string) types.IoBuffer {

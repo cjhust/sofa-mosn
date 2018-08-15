@@ -127,7 +127,7 @@ func (csw *clientStreamWrapper) OnGoAway() {
 	csw.streamConnCallbacks.OnGoAway()
 }
 
-func (csw *clientStreamWrapper) NewStream(streamID string, responseDecoder types.StreamReceiver) types.StreamSender {
+func (csw *clientStreamWrapper) NewStream(text context.Context, streamID string, responseDecoder types.StreamReceiver) types.StreamSender {
 	stream := &clientStream{
 		stream: stream{
 			context:  context.WithValue(csw.context, types.ContextKeyStreamID, streamID),
@@ -182,7 +182,7 @@ func (ssc *serverStreamConnection) ServeHTTP(ctx *fasthttp.RequestCtx) {
 		responseDoneChan: make(chan bool, 1),
 	}
 
-	s.receiver = ssc.serverStreamConnCallbacks.NewStream(streamID, s)
+	s.receiver = ssc.serverStreamConnCallbacks.NewStream(s.stream.context, streamID, s)
 
 	ssc.activeStream = &s.stream
 

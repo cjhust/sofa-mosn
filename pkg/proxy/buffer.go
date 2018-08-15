@@ -15,31 +15,31 @@
  * limitations under the License.
  */
 
-package buffer
+package proxy
 
-import (
-	"sync"
+import "github.com/alipay/sofa-mosn/pkg/types"
 
-	"github.com/alipay/sofa-mosn/pkg/types"
-)
+type proxyBufferCtx struct{}
 
-type objectPool struct {
-	sync.Pool
+func (ctx proxyBufferCtx) Name() string {
+	return "proxyBufferCtx"
 }
 
-func (p *objectPool) Take() (object interface{}) {
-	object = p.Get()
-
-	return
+func (ctx proxyBufferCtx) Init() types.BufferPoolMode {
+	return nil
 }
 
-func (p *objectPool) Give(object interface{}) {
-	p.Put(object)
+func (ctx proxyBufferCtx) New(interface{}) interface{} {
+	return new(proxyBuffers)
+
 }
 
-// NewObjectPool can create an object pool with poolSize
-func NewObjectPool(poolSize int) types.ObjectBufferPool {
-	pool := &objectPool{}
+func (ctx proxyBufferCtx) Reset(i interface{}) {
+	buf, _ := i.(*proxyBuffers)
+	*buf = proxyBuffers{}
+}
 
-	return pool
+type proxyBuffers struct {
+	ds downStream
+	r upstreamRequest
 }

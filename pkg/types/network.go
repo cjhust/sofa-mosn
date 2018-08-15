@@ -227,6 +227,12 @@ type IoBuffer interface {
 	// String returns the contents of the unread portion of the buffer
 	// as a string. If the Buffer is a nil pointer, it returns "<nil>".
 	String() string
+
+	// Alloc alloc mem
+	Alloc(int)
+
+	// Free free mem all bytes from buffer
+	Free()
 }
 
 type BufferWatermarkListener interface {

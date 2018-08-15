@@ -29,6 +29,7 @@ import (
 	"github.com/alipay/sofa-mosn/pkg/log"
 	"github.com/alipay/sofa-mosn/pkg/protocol/sofarpc"
 	"github.com/alipay/sofa-mosn/pkg/types"
+	"github.com/alipay/sofa-mosn/pkg/protocol"
 )
 
 // types.Encoder & types.Decoder
@@ -96,7 +97,8 @@ func (c *boltV2Codec) doEncodeRequestCommand(context context.Context, cmd *sofar
 	// todo: reuse bytes @boqin
 	//data := make([]byte, 22, defaultTmpBufferSize)
 	size := 22 + int(cmd.ClassLen) + len(cmd.HeaderMap)
-	buf := sofarpc.GetBuffer(context, size)
+	protocolCtx := protocol.ProtocolBuffersByContent(context)
+	buf := protocolCtx.GetReqHeader(size)
 
 	b[0] = cmd.Protocol
 	buf.Write(b[0:1])
@@ -146,7 +148,8 @@ func (c *boltV2Codec) doEncodeResponseCommand(context context.Context, cmd *sofa
 	var b [4]byte
 	// todo: reuse bytes @boqin
 	size := 20 + int(cmd.ClassLen) + len(cmd.HeaderMap)
-	buf := sofarpc.GetBuffer(context, size)
+	protocolCtx := protocol.ProtocolBuffersByContent(context)
+	buf := protocolCtx.GetRspHeader(size)
 
 	b[0] = cmd.Protocol
 	buf.Write(b[0:1])

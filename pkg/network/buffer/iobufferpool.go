@@ -47,11 +47,11 @@ func (p *IoBufferPool) Take(r io.ReadWriter) (bpe *IoBufferPoolEntry) {
 
 	if v != nil {
 		v.(*IoBufferPoolEntry).Io = r
-
-		return v.(*IoBufferPoolEntry)
+		bpe =  v.(*IoBufferPoolEntry)
+	} else {
+		bpe = &IoBufferPoolEntry{nil, r}
 	}
 
-	bpe = &IoBufferPoolEntry{nil, r}
 	bpe.Br = NewIoBuffer(int(p.defaultSize))
 
 	return
@@ -59,7 +59,7 @@ func (p *IoBufferPool) Take(r io.ReadWriter) (bpe *IoBufferPoolEntry) {
 
 func (p *IoBufferPool) Give(bpe *IoBufferPoolEntry) {
 	bpe.Io = nil
-	bpe.Br.Reset()
+	bpe.Br.Free()
 	p.pool.Put(bpe)
 }
 

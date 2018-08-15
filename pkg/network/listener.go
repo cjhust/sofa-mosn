@@ -27,6 +27,7 @@ import (
 	"github.com/alipay/sofa-mosn/pkg/log"
 	"github.com/alipay/sofa-mosn/pkg/tls"
 	"github.com/alipay/sofa-mosn/pkg/types"
+	"github.com/kavu/go_reuseport"
 )
 
 // listener impl based on golang net package
@@ -59,9 +60,7 @@ func NewListener(lc *v2.ListenerConfig, logger log.Logger) types.Listener {
 		//inherit old process's listener
 		l.rawl = lc.InheritListener
 	}
-
 	l.tlsMng = tls.NewTLSServerContextManager(lc.FilterChains, l, logger)
-
 	return l
 }
 
@@ -149,10 +148,14 @@ func (l *listener) listen(lctx context.Context) error {
 	var err error
 
 	var rawl *net.TCPListener
-	if rawl, err = net.ListenTCP("tcp", l.localAddress.(*net.TCPAddr)); err != nil {
-		return err
+	//if rawl, err = net.ListenTCP("tcp", l.localAddress.(*net.TCPAddr)); err != nil {
+	ll, err := reuseport.Listen("tcp", l.localAddress.String())
+	if err != nil {
+		log.DefaultLogger.Errorf("listen reuserport %v", err)
+			return err
 	}
 
+	rawl = ll.(*net.TCPListener)
 	l.rawl = rawl
 
 	return nil

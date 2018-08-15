@@ -15,39 +15,28 @@
  * limitations under the License.
  */
 
-package buffer
+package stream
 
-import (
-	"sync"
+import "github.com/alipay/sofa-mosn/pkg/types"
 
-	"github.com/alipay/sofa-mosn/pkg/types"
-)
+type StreamBufferCtx struct{}
 
-type headersBufferPoolV2 struct {
-	sync.Pool
+func (ctx StreamBufferCtx) Name() string {
+	return "StreamBuffers"
 }
 
-func (p *headersBufferPoolV2) Take(capacity int) (amap map[string]string) {
-	v := p.Get()
-
-	if v == nil {
-		amap = make(map[string]string, capacity)
-	} else {
-		amap = v.(map[string]string)
-	}
-
-	return
+func (ctx StreamBufferCtx) Init() types.BufferPoolMode {
+	return nil
 }
 
-func (p *headersBufferPoolV2) Give(amap map[string]string) {
-	for k := range amap {
-		delete(amap, k)
-	}
-
-	p.Put(amap)
+func (ctx StreamBufferCtx) New(interface{}) interface{} {
+	buffer := new(StreamBuffers)
+	return buffer
 }
 
-// NewHeadersBufferPool used to create buffer pool for headers
-func NewHeadersBufferPool(poolSize int) types.HeadersBufferPool {
-	return &headersBufferPoolV2{}
+func (ctx StreamBufferCtx) Reset(i interface{}) {
+}
+
+type StreamBuffers struct {
+	request  activeRequest
 }

@@ -36,12 +36,14 @@ import (
 // Network related const
 const (
 	ConnectionCloseDebugMsg = "Close connection %d, event %s, type %s, data read %d, data write %d"
-	DefaultBufferCapacity   = 1 << 12
+	DefaultBufferReadCapacity   = 1 << 4
+	DefaultBufferWriteCapacity  = 1 << 10
+
 )
 
 var idCounter uint64 = 1
-var readerBufferPool = buffer.NewIoBufferPool(DefaultBufferCapacity)
-var writeBufferPool = buffer.NewIoBufferPool(DefaultBufferCapacity)
+var readerBufferPool = buffer.NewIoBufferPool(DefaultBufferReadCapacity)
+var writeBufferPool = buffer.NewIoBufferPool(DefaultBufferWriteCapacity)
 
 type connection struct {
 	id         uint64
@@ -75,6 +77,8 @@ type connection struct {
 	transferChan        chan uint64
 	readerBufferPool    *buffer.IoBufferPool
 	writeBufferPool     *buffer.IoBufferPool
+
+	BufferCtx           *buffer.BufferCtx
 
 	stats              *types.ConnectionStats
 	lastBytesSizeRead  int64
@@ -212,8 +216,21 @@ func (c *connection) startReadLoop() {
 		default:
 			if c.readEnabled {
 				err := c.doRead()
-
 				if err != nil {
+					if te, ok := err.(net.Error); ok && te.Timeout() {
+						if c.readBuffer != nil && c.readBuffer.Br.Len() == 0 {
+							c.readerBufferPool.Give(c.readBuffer)
+							c.readBuffer = nil
+						}
+						c.writeBufferMux.Lock()
+						if c.writeBuffer != nil && c.writeBuffer.Br.Len() == 0 {
+							c.writeBufferPool.Give(c.writeBuffer)
+							c.writeBuffer = nil
+						}
+						c.writeBufferMux.Unlock()
+
+						continue
+					}
 
 					if err == io.EOF {
 						c.Close(types.NoFlush, types.RemoteClose)
@@ -254,12 +271,12 @@ func (c *connection) doRead() (err error) {
 
 	if err != nil {
 		if te, ok := err.(net.Error); ok && te.Timeout() {
-			return
+			if bytesRead == 0 {
+				return err
+			}
+		} else {
+			return err
 		}
-
-		c.readerBufferPool.Give(c.readBuffer)
-		c.readBuffer = nil
-		return err
 	}
 
 	c.updateReadBufStats(bytesRead, int64(c.readBuffer.Br.Len()))

@@ -34,17 +34,12 @@ import (
 )
 
 var (
-	codecHeadersBufPool types.HeadersBufferPool
-	activeStreamPool    types.ObjectBufferPool
 	globalStats         *proxyStats
-
 	workerPool       mosnsync.ShardWorkerPool
 )
 
 func init() {
 	globalStats = newProxyStats(types.GlobalStatsNamespace)
-	codecHeadersBufPool = buffer.NewHeadersBufferPool(1)
-	activeStreamPool = buffer.NewObjectPool(1)
 
 	// default shardsNum is equal to the cpu num
 	shardsNum := runtime.NumCPU()
@@ -68,7 +63,6 @@ type proxy struct {
 	routers        types.Routers
 	serverCodec    types.ServerStreamConnection
 	resueCodecMaps bool
-	codecPool      types.HeadersBufferPool
 
 	context context.Context
 
@@ -84,26 +78,20 @@ type proxy struct {
 
 	// access logs
 	accessLogs []types.AccessLog
-
-	bytesBufferPool *buffer.SlabPool
 }
 
 func NewProxy(ctx context.Context, config *v2.Proxy, clusterManager types.ClusterManager) Proxy {
-	ctx = context.WithValue(ctx, types.ContextKeyConnectionCodecMapPool, codecHeadersBufPool)
-
 	proxy := &proxy{
 		config:          config,
 		clusterManager:  clusterManager,
 		activeSteams:    list.New(),
 		stats:           globalStats,
 		resueCodecMaps:  true,
-		codecPool:       codecHeadersBufPool,
-		bytesBufferPool: buffer.NewSlabPool(),
 		context:         ctx,
 		accessLogs:      ctx.Value(types.ContextKeyAccessLogs).([]types.AccessLog),
 	}
 
-	proxy.context = context.WithValue(proxy.context, types.ContextKeyConnectionBytesBufferPool, proxy.bytesBufferPool)
+	proxy.context = buffer.NewBufferPoolContext(ctx)
 
 	listenStatsNamespace := ctx.Value(types.ContextKeyListenerStatsNameSpace).(string)
 	proxy.listenerStats = newListenerStats(listenStatsNamespace)
@@ -169,8 +157,8 @@ func (p *proxy) InitializeReadFilterCallbacks(cb types.ReadFilterCallbacks) {
 
 func (p *proxy) OnGoAway() {}
 
-func (p *proxy) NewStream(streamID string, responseSender types.StreamSender) types.StreamReceiver {
-	stream := newActiveStream(streamID, p, responseSender)
+func (p *proxy) NewStream(context context.Context, streamID string, responseSender types.StreamSender) types.StreamReceiver {
+	stream := newActiveStream(context, streamID, p, responseSender)
 
 	if ff := p.context.Value(types.ContextKeyStreamFilterChainFactories); ff != nil {
 		ffs := ff.([]types.StreamFilterChainFactory)
@@ -210,6 +198,7 @@ func (p *proxy) streamResetReasonToResponseFlag(reason types.StreamResetReason) 
 
 func (p *proxy) deleteActiveStream(s *downStream) {
 	// reuse decode map
+	/*
 	if p.resueCodecMaps {
 		if s.downstreamReqHeaders != nil {
 			p.codecPool.Give(s.downstreamReqHeaders)
@@ -229,6 +218,7 @@ func (p *proxy) deleteActiveStream(s *downStream) {
 	if s.downstreamRespDataBuf != nil {
 		p.bytesBufferPool.Give(s.downstreamRespDataBuf)
 	}
+	*/
 
 	if s.element != nil {
 		p.asMux.Lock()
@@ -237,6 +227,9 @@ func (p *proxy) deleteActiveStream(s *downStream) {
 	}
 
 	//s.reset()
+	if 	ctx := buffer.BufferPoolContext(s.context); ctx != nil {
+		ctx.Give()
+	}
 }
 
 // ConnectionEventListener

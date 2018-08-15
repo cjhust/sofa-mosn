@@ -104,9 +104,9 @@ func (p *shardWorkerPool) Offer(job ShardJob) {
 	shard.Lock()
 	switch job.Type() {
 	case NORMAL:
-		select {
-		case shard.jobChan <- job:
-		default:
+		if len(shard.jobQueue) == 0 && cap(shard.jobChan) - len(shard.jobChan) > 0 {
+		    shard.jobChan <- job
+		} else {
 			shard.jobQueue = append(shard.jobQueue, job)
 			// schedule flush if
 			if atomic.CompareAndSwapUint32(&p.schedule, 0, 1) {
@@ -114,9 +114,9 @@ func (p *shardWorkerPool) Offer(job ShardJob) {
 			}
 		}
 	case CONTROL:
-		select {
-		case shard.ctrlChan <- job:
-		default:
+		if len(shard.ctrlQueue) == 0 && cap(shard.ctrlChan) - len(shard.ctrlChan) > 0 {
+			shard.ctrlChan <- job
+		} else {
 			shard.ctrlQueue = append(shard.ctrlQueue, job)
 			// schedule flush if
 			if atomic.CompareAndSwapUint32(&p.schedule, 0, 1) {

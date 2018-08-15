@@ -31,6 +31,7 @@ import (
 	"github.com/alipay/sofa-mosn/pkg/network"
 	"github.com/alipay/sofa-mosn/pkg/protocol"
 	"github.com/alipay/sofa-mosn/pkg/types"
+	"context"
 )
 
 // types.StreamEventListener
@@ -93,10 +94,12 @@ type downStream struct {
 	// mux for downstream-upstream flow
 	mux sync.Mutex
 
+	context context.Context
+
 	logger log.Logger
 }
 
-func newActiveStream(streamID string, proxy *proxy, responseSender types.StreamSender) *downStream {
+func newActiveStream(context context.Context, streamID string, proxy *proxy, responseSender types.StreamSender) *downStream {
 	stream := &downStream{}
 
 	stream.streamID = streamID
@@ -104,6 +107,7 @@ func newActiveStream(streamID string, proxy *proxy, responseSender types.StreamS
 	stream.requestInfo = network.NewRequestInfo()
 	stream.responseSender = responseSender
 	stream.responseSender.GetStream().AddEventListener(stream)
+	stream.context = context
 
 	stream.logger = log.ByContext(proxy.context)
 
@@ -305,7 +309,7 @@ func (s *downStream) doReceiveHeaders(filter *activeStreamReceiverFilter, header
 }
 
 func (s *downStream) OnReceiveData(data types.IoBuffer, endStream bool) {
-	s.downstreamReqDataBuf = s.proxy.bytesBufferPool.Clone(data)
+	s.downstreamReqDataBuf = data
 
 	workerPool.Offer(&receiveDataEvent{
 		normalEvent: normalEvent{
